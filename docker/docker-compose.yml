@@ -1,0 +1,58 @@
+version: "3.9"
+services:
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: acp
+    ports: ["5432:5432"]
+    volumes: ["dbdata:/var/lib/postgresql/data"]
+  master-api:
+    build: ../packages/master-api
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/acp}
+      DB_PROVIDER: postgresql
+      REDIS_URL: redis://redis:6379
+      ACP_SHARED_SECRET: ${ACP_SHARED_SECRET:-dev-secret}
+      DEFAULT_PUBLISH_MODE: ${DEFAULT_PUBLISH_MODE:-preview}
+    ports: ["3000:3000"]
+    depends_on: [db, redis]
+    volumes:
+      - content:/content
+      - artifacts:/artifacts
+  scheduler:
+    build: ../packages/scheduler
+    environment:
+      MASTER_API_BASE: http://master-api:3000
+      ACP_SHARED_SECRET: ${ACP_SHARED_SECRET:-dev-secret}
+      DEFAULT_PUBLISH_MODE: ${DEFAULT_PUBLISH_MODE:-preview}
+    depends_on: [master-api]
+  research-api:
+    build:
+      context: ../packages/agents/research_reports/py/api
+    environment:
+      ALPHAVANTAGE_API_KEY: ${ALPHAVANTAGE_API_KEY:-}
+      ARTIFACTS_DIR: /artifacts/research
+    ports: ["8001:8001"]
+    volumes:
+      - artifacts:/artifacts
+  dashboard:
+    build: ../packages/dashboard
+    environment:
+      MASTER_API_BASE: http://master-api:3000
+    ports: ["4000:4000"]
+  affiliate-writer:
+    build: ../packages/agents/affiliate_blog/py/writer
+    ports: ["8011:8011"]
+  pod-designer:
+    build:
+      context: ../packages/agents/pod_agent/py/designer
+    ports: ["8012:8000"]
+volumes:
+  dbdata: {}
+  content: {}
+  artifacts: {}
